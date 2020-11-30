@@ -24,13 +24,48 @@
 
 set -eu
 
+# The behaviour of KVC depends on the container runtime 
+# podman     - for day-1 out-of-tree drivers
+# kubernetes - for day-2 out-of-tree drivers
+get_container_context() {
+        if awk -F/ '$2 == "kubepods.slice"' /proc/self/cgroup | read non_empty_input; then
+                echo kubernetes
+        else 
+                echo podman
+        fi
+}
+
+# Check if the module only uses whitelisted symbols
+kabi_check_module() {
+    LIBM="/lib/modules"
+    ARCHITECTURE=$(uname -m)
+
+    KRNM=$(modinfo $1 | cut -d':' -f2)
+    SYMBOLS=$(mktemp)
+    WHITELIST=$(mktemp)
+    KABIS=$(ls -d ${LIBM}/kabi-rhel*)
+
+    for KABI in ${KABIS}
+    do
+            tail -n +2 ${KABI}/kabi_whitelist_${ARCHITECTURE} > ${WHITELIST}
+            readelf -sW ${KRNM} | sed -nre 's:.*UND (.*):\1:p' | awk NF > ${SYMBOLS}
+
+            echo "Comparing kernel module symbols $(basename ${KRNM}) against kabi whitelist $(basename ${KABI})"
+            DIFF=$(join -v 1 <(sort ${SYMBOLS}) <(sort ${WHITELIST}))
+            if [ ! -z "${DIFF}" ]; then
+                    echo "WARNING: Non whitelisted symbols:"
+            fi
+    done
+}
+
 # Helper functions for running containers
 # Use set -x to print out the runtime CLI to log
 # Run in a subshell so we don't also see `set +x`
-kvc_c_run()   { (set -x; $KVC_CONTAINER_RUNTIME run -i --rm $@ ); }
-kvc_c_build() { (set -x; $KVC_CONTAINER_RUNTIME build  $@ ); }
-kvc_c_images(){ (set -x; $KVC_CONTAINER_RUNTIME images $@ ); }
-kvc_c_rmi()   { (set -x; $KVC_CONTAINER_RUNTIME rmi    $@ ); }
+kvc_c_run()   { (set -x; $KVC_CONTAINER_ENVIRONMENT run -i --rm $@ ); }
+kvc_c_build() { (set -x; $KVC_CONTAINER_ENVIRONMENT build  $@ ); }
+kvc_c_images(){ (set -x; $KVC_CONTAINER_ENVIRONMENT images $@ ); }
+kvc_c_rmi()   { (set -x; $KVC_CONTAINER_ENVIRONMENT rmi    $@ ); }
+kvc_c_env()   { (set -x; get_container_context)}
 
 # Define these functions in your library file
 build_kmods() {
