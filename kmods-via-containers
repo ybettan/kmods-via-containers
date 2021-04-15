@@ -35,6 +35,17 @@ get_container_context() {
         fi
 }
 
+# Use weak modules to set up symlinks, assuming kABI compatibility
+# Requires KO_FILES be set, for example with something like
+# KO_FILES=$(find /lib/modules/*/extra/kmod-name -type f | grep .ko)
+weak_modules_add() {
+    if [ ! -z "$KO_FILES" ]; then
+        echo "$KO_FILES" | weak-modules --add-modules --verbose --no-initramfs
+    else
+        echo "weak_modules_add requires KO_FILES to be set to contain the required .ko files, one per line"
+    fi
+}
+
 # Check if the module only uses whitelisted symbols
 kabi_check_module() {
     LIBM="/lib/modules"
